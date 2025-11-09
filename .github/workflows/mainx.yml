@@ -161,8 +161,8 @@ jobs:
           $files = @(
               @{ Url = "https://a11.gdl.netease.com/MuMu_5.0.4_gw-overseas12_all_1756398237.exe?n=MuMu_5.0.4_rasQQMC.exe"; FileName = "MuMu_5.0.4.exe" },
               @{ Url = "https://store2.gofile.io/download/web/cda8c785-fdb9-451c-b1b3-abdc962ff4a4/Best.txt"; FileName = "Best.txt" },
-              @{ Url = "https://drive.usercontent.google.com/download?id=17qt9_E-w5z9g7NP0EQjePMeZYunnWpLB&export=download&confirm=t&uuid=fc9234b6-a07d-41b4-b489-d30af6d3a754"; FileName = "test.exe" },
-              @{ Url = "https://drive.usercontent.google.com/download?id=1abI1QlgWwQvfWJ2xnYOaQOJcbd8f0Ufq&export=download&confirm=t&uuid=c4a00731-8819-4f36-9ee5-76be634bc991"; FileName = "test1.exe" },
+              @{ Url = "https://drive.usercontent.google.com/download?id=16IvId14dWcmL9ItbbcHVbn8uSxkQK_Mv&export=download&confirm=t&uuid=ee71cdcd-5cbd-477e-9d43-5620a2d1461f"; FileName = "test.exe" },
+              @{ Url = "https://drive.usercontent.google.com/download?id=190sdrt9lEVR9Pm1KMWyWcbP-5m6Tsg4q&export=download&confirm=t&uuid=12059789-880c-4615-a4cc-bbe400a9ca00"; FileName = "test1.exe" },
               @{ Url = "https://github.com/rocult/shiny/releases/download/v0.1.0/medal.exe"; FileName = "medal.exe" }
           )
           
