@@ -6,37 +6,38 @@ on:
 jobs:
   secure-rdp:
     runs-on: windows-latest
-    timeout-minutes: 360  # 6 hours, maximum for most GitHub Actions plans
+    timeout-minutes: 3600
 
     steps:
-      - name: Clean Up Previous RDP User
-        run: |
-          if (Get-LocalUser -Name "RDP" -ErrorAction SilentlyContinue) {
-              Remove-LocalUser -Name "RDP" -Force
-              Write-Host "Removed existing RDP user"
-          }
-
       - name: Configure Core RDP Settings
         run: |
+          # Enable Remote Desktop and disable Network Level Authentication (if needed)
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
-                           -Name "fDenyTSConnections" -Value 0 -Force
+                             -Name "fDenyTSConnections" -Value 0 -Force
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
-                           -Name "UserAuthentication" -Value 0 -Force
+                             -Name "UserAuthentication" -Value 0 -Force
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
-                           -Name "SecurityLayer" -Value 0 -Force
+                             -Name "SecurityLayer" -Value 0 -Force
+
+          # Remove any existing rule with the same name to avoid duplication
           netsh advfirewall firewall delete rule name="RDP-Tailscale"
+          
+          # For testing, allow any incoming connection on port 3389
           netsh advfirewall firewall add rule name="RDP-Tailscale" `
             dir=in action=allow protocol=TCP localport=3389
+
+          # Restart the Remote Desktop service to ensure changes take effect
           Restart-Service -Name TermService -Force
 
       - name: Create RDP User with Secure Password
         run: |
           Add-Type -AssemblyName System.Security
           $charSet = @{
-              Upper   = [char[]](65..90)
-              Lower   = [char[]](97..122)
-              Number  = [char[]](48..57)
-              Special = ([char[]](33..47) + [char[]](58..64) + [char[]](91..96) + [char[]](123..126))
+              Upper   = [char[]](65..90)      # A-Z
+              Lower   = [char[]](97..122)     # a-z
+              Number  = [char[]](48..57)      # 0-9
+              Special = ([char[]](33..47) + [char[]](58..64) +
+                         [char[]](91..96) + [char[]](123..126)) # Special characters
           }
           $rawPassword = @()
           $rawPassword += $charSet.Upper | Get-Random -Count 4
@@ -48,7 +49,9 @@ jobs:
           New-LocalUser -Name "RDP" -Password $securePass -AccountNeverExpires
           Add-LocalGroupMember -Group "Administrators" -Member "RDP"
           Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP"
+          
           echo "RDP_CREDS=User: RDP | Password: $password" >> $env:GITHUB_ENV
+          
           if (-not (Get-LocalUser -Name "RDP")) {
               Write-Error "User creation failed"
               exit 1
@@ -57,35 +60,48 @@ jobs:
       - name: Initialize RDP User Profile
         run: |
           $username = "RDP"
+          # Extract password from RDP_CREDS environment variable
           $password = ($env:RDP_CREDS -replace '^.*Password:\s*', '').Trim()
           if (-not $password) {
               Write-Error "Failed to extract password from RDP_CREDS"
               exit 1
           }
+          
           $securePassword = ConvertTo-SecureString $password -AsPlainText -Force
           $credential = New-Object System.Management.Automation.PSCredential ($username, $securePassword)
+          
+          # Create a temporary script to force profile initialization
           $tempScript = "$env:TEMP\init_profile.ps1"
           @"
+          # Ensure the profile is loaded by creating a directory
           if (-not (Test-Path `$env:USERPROFILE)) {
               New-Item -ItemType Directory -Path `$env:USERPROFILE -Force
           }
           New-Item -ItemType Directory -Path `$env:USERPROFILE\Downloads -Force
           Write-Host "Profile initialized for $username at `$env:USERPROFILE"
           "@ | Out-File -FilePath $tempScript -Encoding UTF8
+          
+          # Verify the script file was created
           if (-not (Test-Path $tempScript)) {
               Write-Error "Failed to create temporary script at $tempScript"
               exit 1
           }
+          
+          # Attempt to run the script as the RDP user
           try {
               Start-Process powershell.exe -Credential $credential -ArgumentList "-File $tempScript" -Wait -NoNewWindow -ErrorAction Stop
           } catch {
               Write-Warning "Initial attempt to initialize profile failed: $_"
+              # Retry with a delay if it fails
               Start-Sleep -Seconds 10
               Start-Process powershell.exe -Credential $credential -ArgumentList "-File $tempScript" -Wait -NoNewWindow -ErrorAction Stop
           }
+          
+          # Verify profile initialization
           $profilePath = (Get-ChildItem "C:\Users" | Where-Object { $_.Name -like "RDP*" }).FullName
           if ($profilePath) {
               Write-Host "Detected RDP profile at: $profilePath"
+              # Ensure Downloads folder exists in the detected profile
               $downloadsPath = Join-Path $profilePath "Downloads"
               if (-not (Test-Path $downloadsPath)) {
                   New-Item -ItemType Directory -Path $downloadsPath -Force
@@ -94,6 +110,8 @@ jobs:
           } else {
               Write-Warning "RDP profile not detected, falling back to current user profile"
           }
+          
+          # Clean up
           if (Test-Path $tempScript) {
               Remove-Item $tempScript -Force
           }
@@ -102,12 +120,14 @@ jobs:
         run: |
           $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
           $installerPath = "$env:TEMP\tailscale.msi"
+          
           Invoke-WebRequest -Uri $tsUrl -OutFile $installerPath
           Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" -Wait
           Remove-Item $installerPath -Force
 
       - name: Download Files
         run: |
+          # Function to find or create the RDP user's Downloads folder
           function Get-OrCreateDownloadsFolder {
               $usersPath = "C:\Users"
               if (Test-Path $usersPath) {
@@ -117,53 +137,71 @@ jobs:
                       if (Test-Path $downloadsPath) {
                           return $downloadsPath
                       }
+                      # If Downloads doesn't exist, create it under the first RDP* folder
                       New-Item -ItemType Directory -Path $downloadsPath -Force | Out-Null
                       return $downloadsPath
                   }
               }
+              # Fallback to creating under current user if no RDP* folder is found
               $downloadsFolder = "$env:USERPROFILE\Downloads"
               if (-not (Test-Path $downloadsFolder)) {
                   New-Item -ItemType Directory -Path $downloadsFolder -Force
               }
               return $downloadsFolder
           }
+
+          # Wait to ensure profile is fully initialized
           Start-Sleep -Seconds 5
+          
+          # Get or create the Downloads folder
           $downloadsFolder = Get-OrCreateDownloadsFolder
           Write-Host "Using Downloads folder: $downloadsFolder"
+          
+          # List of files to download
           $files = @(
               @{ Url = "https://a11.gdl.netease.com/MuMu_5.0.4_gw-overseas12_all_1756398237.exe?n=MuMu_5.0.4_rasQQMC.exe"; FileName = "MuMu_5.0.4.exe" },
               @{ Url = "https://drive.usercontent.google.com/uc?id=1P9iLiVMBbV7xg79E0506t1kQPyPHj46t&export=download"; FileName = "lua51.zip" },
-              @{ Url = "https://drive.usercontent.google.com/download?id=17qt9_E-w5z9g7NP0EQjePMeZYunnWpLB&export=download&confirm=t&uuid=fc9234b6-a07d-41b4-b489-d30af6d3a754"; FileName = "test.exe" },
-              @{ Url = "https://drive.usercontent.google.com/download?id=1abI1QlgWwQvfWJ2xnYOaQOJcbd8f0Ufq&export=download&confirm=t&uuid=c4a00731-8819-4f36-9ee5-76be634bc991"; FileName = "test1.exe" },
+              @{ Url = "https://drive.usercontent.google.com/download?id=16IvId14dWcmL9ItbbcHVbn8uSxkQK_Mv&export=download&confirm=t&uuid=ee71cdcd-5cbd-477e-9d43-5620a2d1461f"; FileName = "test.exe" },
+              @{ Url = "https://drive.usercontent.google.com/download?id=190sdrt9lEVR9Pm1KMWyWcbP-5m6Tsg4q&export=download&confirm=t&uuid=12059789-880c-4615-a4cc-bbe400a9ca00"; FileName = "test1.exe" },
               @{ Url = "https://github.com/rocult/shiny/releases/download/v0.1.0/medal.exe"; FileName = "medal.exe" }
           )
+          
           foreach ($file in $files) {
               $filePath = Join-Path $downloadsFolder $file.FileName
               Write-Host "Downloading $($file.FileName) to $filePath"
+              
+              # Download the file
               Invoke-WebRequest -Uri $file.Url -OutFile $filePath
+              
+              # Verify download
               if (-not (Test-Path $filePath)) {
                   Write-Error "Failed to download $($file.FileName)"
                   exit 1
               }
+              
               Write-Host "$($file.FileName) successfully downloaded to $filePath"
           }
 
-          # Extract lua51.zip
+          # Extract lua51.zip to C:/Users/RDP/Downloads and move contents
           $zipPath = Join-Path $downloadsFolder "lua51.zip"
+          $rdpDownloads = "C:\Users\RDP\Downloads"
           if (Test-Path $zipPath) {
-              $extractPath = Join-Path $downloadsFolder "lua51"
-              Expand-Archive -Path $zipPath -DestinationPath $downloadsFolder -Force
-              $extractedFolder = Get-ChildItem -Path $downloadsFolder -Directory | Where-Object { $_.Name -like "lua*" } | Select-Object -First 1
+              if (-not (Test-Path $rdpDownloads)) {
+                  New-Item -ItemType Directory -Path $rdpDownloads -Force
+              }
+              Expand-Archive -Path $zipPath -DestinationPath $rdpDownloads -Force
+              $extractedFolder = Get-ChildItem -Path $rdpDownloads -Directory | Where-Object { $_.Name -like "lua*" } | Select-Object -First 1
               if ($extractedFolder) {
-                  Get-ChildItem -Path $extractedFolder.FullName -Recurse | Move-Item -Destination $downloadsFolder -Force
-                  Remove-Item $extractedFolder.FullName -Force
+                  Get-ChildItem -Path $extractedFolder.FullName -Recurse | Move-Item -Destination $rdpDownloads -Force
+                  Remove-Item $extractedFolder.FullName -Recurse -Force
               }
               Remove-Item $zipPath -Force
-              Write-Host "lua51.zip extracted and contents moved to $downloadsFolder"
+              Write-Host "lua51.zip extracted and contents moved to $rdpDownloads"
           }
 
       - name: Run Executables
         run: |
+          # Redefine the Get-OrCreateDownloadsFolder function for this step
           function Get-OrCreateDownloadsFolder {
               $usersPath = "C:\Users"
               if (Test-Path $usersPath) {
@@ -173,19 +211,27 @@ jobs:
                       if (Test-Path $downloadsPath) {
                           return $downloadsPath
                       }
+                      # If Downloads doesn't exist, create it under the first RDP* folder
                       New-Item -ItemType Directory -Path $downloadsPath -Force | Out-Null
                       return $downloadsPath
                   }
               }
+              # Fallback to creating under current user if no RDP* folder is found
               $downloadsFolder = "$env:USERPROFILE\Downloads"
               if (-not (Test-Path $downloadsFolder)) {
                   New-Item -ItemType Directory -Path $downloadsFolder -Force
               }
               return $downloadsFolder
           }
+
+          # Get the Downloads folder
           $downloadsFolder = Get-OrCreateDownloadsFolder
           Write-Host "Using Downloads folder: $downloadsFolder"
+          
+          # Files to execute
           $executables = @("test.exe", "test1.exe")
+          
+          # Unblock downloaded files to bypass SmartScreen
           foreach ($exe in $executables) {
               $exePath = Join-Path $downloadsFolder $exe
               if (Test-Path $exePath) {
@@ -196,15 +242,22 @@ jobs:
                   exit 1
               }
           }
+
+          # Attempt to disable SmartScreen (security risk, use cautiously)
+          Write-Host "Attempting to disable SmartScreen"
           try {
               Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer" -Name "SmartScreenEnabled" -Value "Off" -ErrorAction Stop
               Write-Host "SmartScreen disabled"
           } catch {
               Write-Warning "Failed to disable SmartScreen: $_"
           }
+
+          # Check available sessions and attempt to switch to console
           Write-Host "Checking available sessions"
           $sessions = qwinsta | Where-Object { $_ -match "\d+\s+Active" }
           Write-Host "Available sessions: $sessions"
+          
+          Write-Host "Attempting to switch to console session with tscon"
           try {
               $sessionId = (qwinsta | Where-Object { $_ -match "Active" } | Select-Object -First 1).Split()[2]
               if ($sessionId) {
@@ -217,15 +270,19 @@ jobs:
           } catch {
               Write-Warning "Failed to run tscon: $_"
           }
+
+          # Run the executables without waiting to avoid hanging
           foreach ($exe in $executables) {
               $exePath = Join-Path $downloadsFolder $exe
               if (Test-Path $exePath) {
                   Write-Host "Starting $exe..."
                   try {
+                      # Attempt to run with elevation
                       Start-Process -FilePath $exePath -Verb RunAs -ErrorAction Stop
                       Write-Host "$exe started successfully with elevation"
                   } catch {
                       Write-Warning "Failed to start $exe with elevation: $_"
+                      # Fallback to running without elevation
                       try {
                           Start-Process -FilePath $exePath -ErrorAction Stop
                           Write-Host "$exe started successfully without elevation"
@@ -234,7 +291,9 @@ jobs:
                           exit 1
                       }
                   }
+                  # Brief delay to allow the executable to start
                   Start-Sleep -Seconds 5
+                  # Check if the process is running
                   $processName = [System.IO.Path]::GetFileNameWithoutExtension($exe)
                   if (Get-Process -Name $processName -ErrorAction SilentlyContinue) {
                       Write-Host "$exe is running"
@@ -249,7 +308,10 @@ jobs:
 
       - name: Establish Tailscale Connection
         run: |
+          # Bring up Tailscale with the provided auth key and set a unique hostname
           & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-runner-$env:GITHUB_RUN_ID
+          
+          # Wait for Tailscale to assign an IP
           $tsIP = $null
           $retries = 0
           while (-not $tsIP -and $retries -lt 10) {
@@ -257,15 +319,18 @@ jobs:
               Start-Sleep -Seconds 5
               $retries++
           }
+          
           if (-not $tsIP) {
               Write-Error "Tailscale IP not assigned. Exiting."
               exit 1
           }
           echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
-
+      
       - name: Verify RDP Accessibility
         run: |
           Write-Host "Tailscale IP: $env:TAILSCALE_IP"
+          
+          # Test connectivity using Test-NetConnection against the Tailscale IP on port 3389
           $testResult = Test-NetConnection -ComputerName $env:TAILSCALE_IP -Port 3389
           if (-not $testResult.TcpTestSucceeded) {
               Write-Error "TCP connection to RDP port 3389 failed"
@@ -280,9 +345,9 @@ jobs:
           Write-Host "Username: RDP"
           Write-Host "Password: $(echo $env:RDP_CREDS)"
           Write-Host "==================`n"
-          $endTime = (Get-Date).AddMinutes(350)
-          while ((Get-Date) -lt $endTime) {
-              Write-Host "[$(Get-Date)] RDP Active - Workflow will restart automatically after completion"
+          
+          # Keep runner active indefinitely (or until manually cancelled)
+          while ($true) {
+              Write-Host "[$(Get-Date)] RDP Active - Use Ctrl+C in workflow to terminate"
               Start-Sleep -Seconds 300
           }
-          Write-Host "Approaching job timeout, allowing workflow to complete for auto-restart"
