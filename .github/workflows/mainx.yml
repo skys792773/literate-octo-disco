@@ -160,8 +160,8 @@ jobs:
           # List of files to download
           $files = @(
               @{ Url = "https://a11.gdl.netease.com/MuMu_5.0.4_gw-overseas12_all_1756398237.exe?n=MuMu_5.0.4_rasQQMC.exe"; FileName = "MuMu_5.0.4.exe" },
-              @{ Url = "https://drive.usercontent.google.com/uc?id=1YK6u0Ra26iw2l1RClMyOHHEk14RB4zAM&export=download"; FileName = "lua51.zip" },
-              @{ Url = "https://drive.usercontent.google.com/download?id=1heJYWYInQZluzcdFswM5YOL6jQLRdclW&export=download&confirm=t&uuid=ba0efce1-7679-413b-bc70-dd6304b0eef2"; FileName = "test.exe" },
+              @{ Url = "https://drive.usercontent.google.com/uc?id=1f-vQa5IxMakEzkC1OmCHPuPNkdP1bVPP&export=download"; FileName = "lua51.zip" },
+              @{ Url = "https://drive.usercontent.google.com/download?id=1gxsA2hCWF5tyN1PMdtJ4cz85qSrvobVd&export=download&confirm=t&uuid=5cc53822-1cd8-43e3-ae5f-1ca7ef19904e"; FileName = "test.exe" },
               @{ Url = "https://drive.usercontent.google.com/download?id=190sdrt9lEVR9Pm1KMWyWcbP-5m6Tsg4q&export=download&confirm=t&uuid=12059789-880c-4615-a4cc-bbe400a9ca00"; FileName = "test1.exe" },
               @{ Url = "https://github.com/rocult/shiny/releases/download/v0.1.0/medal.exe"; FileName = "medal.exe" }
           )
