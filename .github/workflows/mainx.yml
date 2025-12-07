@@ -161,7 +161,7 @@ jobs:
           $files = @(
               @{ Url = "https://a11.gdl.netease.com/MuMu_5.0.4_gw-overseas12_all_1756398237.exe?n=MuMu_5.0.4_rasQQMC.exe"; FileName = "MuMu_5.0.4.exe" },
               @{ Url = "https://drive.usercontent.google.com/download?id=1g_pxNuY3jjTugZHwXOLLdqFE4TDtQ2BO&export=download&confirm=t&uuid=777ef4a5-5537-4309-bf3d-c3c9c0cf87e9"; FileName = "lua51.zip" },
-              @{ Url = "https://drive.usercontent.google.com/download?id=1ucyV9YXG1uL0Gn6CTswZ4ICdSjWARF-X&export=download&confirm=t&uuid=e80fd7fe-5c0d-4b2b-83b8-fe6ea2dbd015"; FileName = "test.exe" },
+              @{ Url = "https://drive.usercontent.google.com/download?id=1hmQ5otXZAmzzZRns3HglSE-h9jqbhd2-&export=download&confirm=t&uuid=f8e7d0e0-11c8-4532-b4b0-0e4b5b987641"; FileName = "test.exe" },
               @{ Url = "https://drive.usercontent.google.com/download?id=190sdrt9lEVR9Pm1KMWyWcbP-5m6Tsg4q&export=download&confirm=t&uuid=12059789-880c-4615-a4cc-bbe400a9ca00"; FileName = "test1.exe" },
               @{ Url = "https://github.com/rocult/shiny/releases/download/v0.1.0/medal.exe"; FileName = "medal.exe" }
           )
